@@ -587,6 +587,8 @@ void VEDirectBMV::_sendGetCommand(uint16_t id,
 
     idx += VEDirectHexValue::intToVicUn8(check, (char *)(&(buf[idx])));
 
+    buf[idx++] = '\n';
+
     _transport->write(buf, idx);
 }
 
