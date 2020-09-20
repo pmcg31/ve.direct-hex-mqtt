@@ -276,9 +276,9 @@ VEDirectHexFieldStringResp VEDirectBMV::_getString(JsonObject fieldInfo)
 
     uint16_t id = strtoul(fieldInfo["id"], 0, 0);
 
-    sendGetCommand(id, buf, bufLen);
+    _sendGetCommand(id, buf, bufLen);
 
-    int len = readResponse(buf, bufLen);
+    int len = _readResponse(buf, bufLen);
     if (len < 0)
     {
         if (len == g_errTimeout)
@@ -382,9 +382,9 @@ VEDirectHexFieldResp VEDirectBMV::_get(JsonObject fieldInfo)
 
     uint16_t id = strtoul(fieldInfo["id"], 0, 0);
 
-    sendGetCommand(id, buf, bufLen);
+    _sendGetCommand(id, buf, bufLen);
 
-    int len = readResponse(buf, bufLen);
+    int len = _readResponse(buf, bufLen);
     if (len < 0)
     {
         if (len == g_errTimeout)
@@ -571,9 +571,9 @@ VEDirectHexFieldResp VEDirectBMV::_set(JsonObject fieldInfo, VEDirectHexValue va
     return VEDirectHexFieldResp("Not implemented yet");
 }
 
-void VEDirectBMV::sendGetCommand(uint16_t id,
-                                 uint8_t *buf,
-                                 int bufLen)
+void VEDirectBMV::_sendGetCommand(uint16_t id,
+                                  uint8_t *buf,
+                                  int bufLen)
 {
     int idx = 0;
 
@@ -590,7 +590,7 @@ void VEDirectBMV::sendGetCommand(uint16_t id,
     _transport->write(buf, idx);
 }
 
-int VEDirectBMV::readResponse(uint8_t *buf, size_t bufLen)
+int VEDirectBMV::_readResponse(uint8_t *buf, size_t bufLen)
 {
     unsigned long millisTimeout = millis() + g_responseTimeout_ms;
     int idx = 0;

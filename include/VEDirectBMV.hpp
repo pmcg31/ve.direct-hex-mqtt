@@ -40,11 +40,11 @@ private:
     VEDirectHexFieldResp _get(JsonObject fieldInfo);
     VEDirectHexFieldResp _set(JsonObject fieldInfo, VEDirectHexValue value);
 
-    void sendGetCommand(uint16_t id, uint8_t *buf, int bufLen);
+    void _sendGetCommand(uint16_t id, uint8_t *buf, int bufLen);
 
-    int readResponse(uint8_t *buf, size_t bufLen);
+    int _readResponse(uint8_t *buf, size_t bufLen);
 
-public:
+private:
     enum Command
     {
         c_ping = 0x1,
