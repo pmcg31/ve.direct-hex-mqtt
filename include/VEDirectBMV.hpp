@@ -86,6 +86,7 @@ private:
 
     static const int g_errTimeout = -1;
     static const int g_errMsgTooLong = -2;
+    static const int g_badChecksum = -3;
 
 private:
     VEDirectTransport *_transport;

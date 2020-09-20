@@ -296,6 +296,80 @@ VEDirectHexFieldStringResp VEDirectBMV::_getString(JsonObject fieldInfo)
     }
     else
     {
+        // Check response type
+        if (buf[1] == VEDirectHexValue::hexDigits[r_get])
+        {
+            // 'Get' response; what we asked for! Check id & flags before we get too excited...
+            uint16_t resp_id = VEDirectHexValue::vicUn16ToInt((char *)(&(buf[2])));
+            uint8_t resp_flags = VEDirectHexValue::vicUn8ToInt((char *)(&(buf[6])));
+
+            // Check that the id on the response matches the one requested
+            if (resp_id != id)
+            {
+                char errorMsg[200];
+                sprintf(errorMsg, "Unexpeced 'id' in response to 'get' command: 0x%04X; requested 0x%04X", resp_id, id);
+
+                return VEDirectHexFieldStringResp(errorMsg);
+            }
+
+            // No flags is good flags
+            if (resp_flags != 0)
+            {
+                // Alas, bad flags...
+                char errorMsg[200];
+                int idx = 0;
+
+                if ((resp_flags & f_unknownId) != 0)
+                {
+                    idx += sprintf(errorMsg, "id does not exist");
+                }
+                if ((resp_flags & f_notSupported) != 0)
+                {
+                    if (idx != 0)
+                    {
+                        idx += sprintf(errorMsg + idx, " | ");
+                    }
+                    idx += sprintf(errorMsg, "attempt to write read only value");
+                }
+                if ((resp_flags & f_parameterError) != 0)
+                {
+                    if (idx != 0)
+                    {
+                        idx += sprintf(errorMsg + idx, " | ");
+                    }
+                    idx += sprintf(errorMsg, "parameter error");
+                }
+
+                return VEDirectHexFieldStringResp(errorMsg);
+            }
+
+            // Good message! The rest of the message is the string aside from the last check byte
+            char str[33];
+            if ((len - 8) < 33)
+            {
+                memcpy(str, &(buf[7]), len - 8);
+                str[32] = '\0';
+            }
+            else
+            {
+                return VEDirectHexFieldStringResp("Response string too long");
+            }
+
+            return VEDirectHexFieldStringResp((const char *)buf, str, fieldInfo);
+        }
+        else if (buf[1] == VEDirectHexValue::hexDigits[r_unknown])
+        {
+            // 'Unknown' response; our request was not recognized
+            return VEDirectHexFieldStringResp("Command not recognized by device");
+        }
+        else
+        {
+            // Some other response type, definitely not what was asked for
+            char errorMsg[200];
+            sprintf(errorMsg, "Unexpeced response type to 'get' command: 0x%X", buf[1]);
+
+            return VEDirectHexFieldStringResp(errorMsg);
+        }
     }
 
     return VEDirectHexFieldStringResp("Not implemented yet");
@@ -328,9 +402,168 @@ VEDirectHexFieldResp VEDirectBMV::_get(JsonObject fieldInfo)
     }
     else
     {
+        // Check response type
+        if (buf[1] == VEDirectHexValue::hexDigits[r_get])
+        {
+            // 'Get' response; what we asked for! Check id & flags before we get too excited...
+            uint16_t resp_id = VEDirectHexValue::vicUn16ToInt((char *)(&(buf[2])));
+            uint8_t resp_flags = VEDirectHexValue::vicUn8ToInt((char *)(&(buf[6])));
+
+            // Check that the id on the response matches the one requested
+            if (resp_id != id)
+            {
+                char errorMsg[200];
+                sprintf(errorMsg, "Unexpeced 'id' in response to 'get' command: 0x%04X; requested 0x%04X", resp_id, id);
+
+                return VEDirectHexFieldResp(errorMsg);
+            }
+
+            // No flags is good flags
+            if (resp_flags != 0)
+            {
+                // Alas, bad flags...
+                char errorMsg[200];
+                int idx = 0;
+
+                if ((resp_flags & f_unknownId) != 0)
+                {
+                    idx += sprintf(errorMsg, "id does not exist");
+                }
+                if ((resp_flags & f_notSupported) != 0)
+                {
+                    if (idx != 0)
+                    {
+                        idx += sprintf(errorMsg + idx, " | ");
+                    }
+                    idx += sprintf(errorMsg, "attempt to write read only value");
+                }
+                if ((resp_flags & f_parameterError) != 0)
+                {
+                    if (idx != 0)
+                    {
+                        idx += sprintf(errorMsg + idx, " | ");
+                    }
+                    idx += sprintf(errorMsg, "parameter error");
+                }
+
+                return VEDirectHexFieldResp(errorMsg);
+            }
+
+            // Check storage type
+            int payloadSize = len - 8;
+            char *payload = (char *)(&(buf[7]));
+            int expectedPayloadSize = -1;
+            const char *storageType = fieldInfo["storage"];
+            if (strcmp("un8", storageType) == 0)
+            {
+                if (payloadSize == 2)
+                {
+                    return VEDirectHexFieldResp((const char *)buf,
+                                                VEDirectHexValue::vicUn8ToInt(payload),
+                                                fieldInfo);
+                }
+                else
+                {
+                    expectedPayloadSize = 2;
+                }
+            }
+            else if (strcmp("sn16", storageType) == 0)
+            {
+                if (payloadSize == 4)
+                {
+                    return VEDirectHexFieldResp((const char *)buf,
+                                                VEDirectHexValue::vicSn16ToInt(payload),
+                                                fieldInfo);
+                }
+                else
+                {
+                    expectedPayloadSize = 4;
+                }
+            }
+            else if (strcmp("un16", storageType) == 0)
+            {
+                if (payloadSize == 4)
+                {
+                    return VEDirectHexFieldResp((const char *)buf,
+                                                VEDirectHexValue::vicUn16ToInt(payload),
+                                                fieldInfo);
+                }
+                else
+                {
+                    expectedPayloadSize = 4;
+                }
+            }
+            else if (strcmp("un24", storageType) == 0)
+            {
+                if (payloadSize == 6)
+                {
+                    return VEDirectHexFieldResp((const char *)buf,
+                                                VEDirectHexValue::vicUn24ToInt(payload),
+                                                fieldInfo);
+                }
+                else
+                {
+                    expectedPayloadSize = 6;
+                }
+            }
+            else if (strcmp("sn32", storageType) == 0)
+            {
+                if (payloadSize == 8)
+                {
+                    return VEDirectHexFieldResp((const char *)buf,
+                                                VEDirectHexValue::vicSn32ToInt(payload),
+                                                fieldInfo);
+                }
+                else
+                {
+                    expectedPayloadSize = 8;
+                }
+            }
+            else if (strcmp("un32", storageType) == 0)
+            {
+                if (payloadSize == 8)
+                {
+                    return VEDirectHexFieldResp((const char *)buf,
+                                                VEDirectHexValue::vicUn32ToInt(payload),
+                                                fieldInfo);
+                }
+                else
+                {
+                    expectedPayloadSize = 8;
+                }
+            }
+            else
+            {
+                char errorMsg[200];
+                sprintf(errorMsg, "Unknown storage type for field id 0x%04X: '%s'", id, storageType);
+
+                return VEDirectHexFieldResp(errorMsg);
+            }
+
+            if (expectedPayloadSize != -1)
+            {
+                char errorMsg[200];
+                sprintf(errorMsg, "Unexpected payload size for field id 0x%04X: expected %d bytes, received %d", id, expectedPayloadSize, payloadSize);
+
+                return VEDirectHexFieldResp(errorMsg);
+            }
+        }
+        else if (buf[1] == VEDirectHexValue::hexDigits[r_unknown])
+        {
+            // 'Unknown' response; our request was not recognized
+            return VEDirectHexFieldResp("Command not recognized by device");
+        }
+        else
+        {
+            // Some other response type, definitely not what was asked for
+            char errorMsg[200];
+            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X", buf[1]);
+
+            return VEDirectHexFieldResp(errorMsg);
+        }
     }
 
-    return VEDirectHexFieldResp("Not implemented yet");
+    return VEDirectHexFieldResp("Unknown error");
 }
 
 VEDirectHexFieldResp VEDirectBMV::_set(JsonObject fieldInfo, VEDirectHexValue value)
@@ -399,6 +632,25 @@ int VEDirectBMV::readResponse(uint8_t *buf, size_t bufLen)
                 }
             }
         }
+    }
+
+    // Check checksum
+    uint8_t check = 0;
+    for (int i = 0; i < 16; i++)
+    {
+        if (buf[1] == VEDirectHexValue::hexDigits[i])
+        {
+            check = i;
+            break;
+        }
+    }
+    for (int i = 2; i < idx; i += 2)
+    {
+        check += VEDirectHexValue::vicUn8ToInt((char *)(&(buf[i])));
+    }
+    if (check != g_checkMagic)
+    {
+        return g_badChecksum;
     }
 
     return idx;
