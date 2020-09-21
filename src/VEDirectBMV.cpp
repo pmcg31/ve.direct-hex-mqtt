@@ -91,7 +91,7 @@ VEDirectBMVAppVersionResp VEDirectBMV::ping()
             // Some other response type, definitely
             // not what was asked for
             char errorMsg[200];
-            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X", buf[1]);
+            sprintf(errorMsg, "Unexpected response type to 'ping' command: 0x%X resp: [%s]", buf[1], buf);
 
             return VEDirectBMVAppVersionResp(errorMsg);
         default:
@@ -217,7 +217,7 @@ VEDirectBMVAppVersionResp VEDirectBMV::appVersion()
             // Some other response type, definitely
             // not what was asked for
             char errorMsg[200];
-            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X", buf[1]);
+            sprintf(errorMsg, "Unexpected response type to 'appVersion' command: 0x%X resp: [%s]", buf[1], buf);
 
             return VEDirectBMVAppVersionResp(errorMsg);
         default:
@@ -343,7 +343,7 @@ VEDirectBMVProductIdResp VEDirectBMV::productId()
             // Some other response type, definitely
             // not what was asked for
             char errorMsg[200];
-            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X", buf[1]);
+            sprintf(errorMsg, "Unexpected response type to 'productId' command: 0x%X resp: [%s]", buf[1], buf);
 
             return VEDirectBMVProductIdResp(errorMsg);
         default:
@@ -690,7 +690,7 @@ VEDirectHexFieldStringResp VEDirectBMV::_getString(JsonObject fieldInfo)
             // Some other response type, definitely
             // not what was asked for
             char errorMsg[200];
-            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X", buf[1]);
+            sprintf(errorMsg, "Unexpected response type to 'getString' command: 0x%X resp: [%s]", buf[1], buf);
 
             return VEDirectHexFieldStringResp(errorMsg);
         default:
@@ -824,7 +824,7 @@ VEDirectHexFieldResp VEDirectBMV::_get(JsonObject fieldInfo)
             // Some other response type, definitely
             // not what was asked for
             char errorMsg[200];
-            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X", buf[1]);
+            sprintf(errorMsg, "Unexpected response type to 'get' command: 0x%X resp: [%s]", buf[1], buf);
 
             return VEDirectHexFieldResp(errorMsg);
         default:
@@ -1000,7 +1000,290 @@ VEDirectHexFieldResp VEDirectBMV::_get(JsonObject fieldInfo)
 
 VEDirectHexFieldResp VEDirectBMV::_set(JsonObject fieldInfo, VEDirectHexValue value)
 {
-    return VEDirectHexFieldResp("Not implemented yet");
+    const size_t bufLen = 100;
+    uint8_t buf[bufLen];
+    int idx = 0;
+
+    // Convert field id to int
+    uint16_t id = strtoul(fieldInfo["id"], 0, 0);
+
+    // Send a set command for it
+    // VE.Direct messages start with a colon and the command nibble
+    buf[idx++] = ':';
+    buf[idx++] = VEDirectUtils::hexDigits[c_set];
+
+    // Add the field id
+    idx += VEDirectUtils::intToVicUn16(id, (char *)(&(buf[idx])));
+
+    // Add the flags
+    idx += VEDirectUtils::intToVicUn8(0, (char *)(&(buf[idx])));
+
+    // Add the data
+    const char *storageType = fieldInfo["storage"];
+    if (strcmp("un8", storageType) == 0)
+    {
+        idx += VEDirectUtils::intToVicUn8(value.asUn8(), (char *)(&(buf[idx])));
+    }
+    else if (strcmp("sn16", storageType) == 0)
+    {
+        idx += VEDirectUtils::intToVicSn16(value.asSn16(), (char *)(&(buf[idx])));
+    }
+    else if (strcmp("un16", storageType) == 0)
+    {
+        idx += VEDirectUtils::intToVicUn16(value.asUn16(), (char *)(&(buf[idx])));
+    }
+    else if (strcmp("un24", storageType) == 0)
+    {
+        idx += VEDirectUtils::intToVicUn24(value.asUn24(), (char *)(&(buf[idx])));
+    }
+    else if (strcmp("sn32", storageType) == 0)
+    {
+        idx += VEDirectUtils::intToVicSn32(value.asSn32(), (char *)(&(buf[idx])));
+    }
+    else if (strcmp("un32", storageType) == 0)
+    {
+        idx += VEDirectUtils::intToVicUn32(value.asUn32(), (char *)(&(buf[idx])));
+    }
+    else
+    {
+        // Our field definitions contain a storage type that isn't
+        // being accounted for here...ooops! Go fix that...
+        char errorMsg[200];
+        sprintf(errorMsg, "Unknown storage type for field id 0x%04X: '%s'", id, storageType);
+
+        return VEDirectHexFieldResp(errorMsg);
+    }
+
+    // Compute the check byte
+    uint8_t check = c_set;
+    for (int i = 2; i < idx; i += 2)
+    {
+        check += VEDirectUtils::vicUn8ToInt((const char *)(&(buf[i])));
+    }
+    check = g_checkMagic - check;
+
+    // Add check byte to message
+    idx += VEDirectUtils::intToVicUn8(check, (char *)(&(buf[idx])));
+
+    // Messages end with newline
+    buf[idx++] = '\n';
+
+    // Send it
+    _transport->write(buf, idx);
+    _sendGetCommand(id, buf, bufLen);
+
+    // Read the response synchronously
+    // (there is a built-in timeout in
+    // _readResponse)
+    int len = _readResponse(buf, bufLen);
+
+    // How'd we do?
+    if (len < 0)
+    {
+        // Oh, nice! Miserable again! What flavor?
+        if (len == g_errTimeout)
+        {
+            return VEDirectHexFieldResp("Timeout waiting for response");
+        }
+        else if (len == g_errMsgTooLong)
+        {
+            return VEDirectHexFieldResp("Message buffer overflow reading response");
+        }
+        else
+        {
+            return VEDirectHexFieldResp("Unknown error reading response");
+        }
+    }
+
+    // Check response type
+    CheckResponseResult res = _checkResponseType(buf[1], r_set);
+    if (res != cr_ok)
+    {
+        // Not ok (this comment tells you nothing new)
+        switch (res)
+        {
+        case cr_badVicResponseType:
+            // buf[1] didn't contain a hex digit
+            return VEDirectHexFieldResp("Incorrectly formatted response from device");
+        case cr_cmdNotRecognized:
+            // 'Unknown' response; our request was
+            // not recognized
+            return VEDirectHexFieldResp("Command not recognized by device");
+        case cr_unknownResponseType:
+            // Some other response type, definitely
+            // not what was asked for
+            char errorMsg[200];
+            sprintf(errorMsg, "Unexpected response type to 'set' command: 0x%X resp: [%s]", buf[1], buf);
+
+            return VEDirectHexFieldResp(errorMsg);
+        default:
+            // We have no idea what went wrong
+            return VEDirectHexFieldResp("Unknown error");
+        }
+    }
+
+    // Response type is good! Check id & flags
+    // before we get too excited...
+    uint16_t resp_id = VEDirectUtils::vicUn16ToInt((char *)(&(buf[2])));
+    uint8_t resp_flags = VEDirectUtils::vicUn8ToInt((char *)(&(buf[6])));
+
+    // Check that the id on the response matches the one requested
+    if (resp_id != id)
+    {
+        char errorMsg[200];
+        sprintf(errorMsg, "Unexpected 'id' in response to 'get' command: 0x%04X; requested 0x%04X", resp_id, id);
+
+        return VEDirectHexFieldResp(errorMsg);
+    }
+
+    // No flags is good flags
+    if (resp_flags != 0)
+    {
+        // Alas, bad flags...
+        char errorMsg[200];
+        int idx = 0;
+
+        if ((resp_flags & f_unknownId) != 0)
+        {
+            idx += sprintf(errorMsg, "id does not exist");
+        }
+        if ((resp_flags & f_notSupported) != 0)
+        {
+            if (idx != 0)
+            {
+                idx += sprintf(errorMsg + idx, " | ");
+            }
+            idx += sprintf(errorMsg, "attempt to write read only value");
+        }
+        if ((resp_flags & f_parameterError) != 0)
+        {
+            if (idx != 0)
+            {
+                idx += sprintf(errorMsg + idx, " | ");
+            }
+            idx += sprintf(errorMsg, "parameter error");
+        }
+
+        return VEDirectHexFieldResp(errorMsg);
+    }
+
+    // Check storage type
+    int payloadSize = len - 10;
+    char *payload = (char *)(&(buf[8]));
+    int expectedPayloadSize = -1;
+    if (strcmp("un8", storageType) == 0)
+    {
+        // un8 is 2 hex digits
+        if (payloadSize == 2)
+        {
+            return VEDirectHexFieldResp((const char *)buf,
+                                        VEDirectUtils::vicUn8ToInt(payload),
+                                        fieldInfo);
+        }
+        else
+        {
+            // Setting this triggers an error response below
+            expectedPayloadSize = 2;
+        }
+    }
+    else if (strcmp("sn16", storageType) == 0)
+    {
+        // sn16 is 4 hex digits
+        if (payloadSize == 4)
+        {
+            return VEDirectHexFieldResp((const char *)buf,
+                                        VEDirectUtils::vicSn16ToInt(payload),
+                                        fieldInfo);
+        }
+        else
+        {
+            // Setting this triggers an error response below
+            expectedPayloadSize = 4;
+        }
+    }
+    else if (strcmp("un16", storageType) == 0)
+    {
+        // un16 is 4 hex digits
+        if (payloadSize == 4)
+        {
+            return VEDirectHexFieldResp((const char *)buf,
+                                        VEDirectUtils::vicUn16ToInt(payload),
+                                        fieldInfo);
+        }
+        else
+        {
+            // Setting this triggers an error response below
+            expectedPayloadSize = 4;
+        }
+    }
+    else if (strcmp("un24", storageType) == 0)
+    {
+        // un24 is 6 hex digits
+        if (payloadSize == 6)
+        {
+            return VEDirectHexFieldResp((const char *)buf,
+                                        VEDirectUtils::vicUn24ToInt(payload),
+                                        fieldInfo);
+        }
+        else
+        {
+            // Setting this triggers an error response below
+            expectedPayloadSize = 6;
+        }
+    }
+    else if (strcmp("sn32", storageType) == 0)
+    {
+        // sn32 is 8 hex digits
+        if (payloadSize == 8)
+        {
+            return VEDirectHexFieldResp((const char *)buf,
+                                        VEDirectUtils::vicSn32ToInt(payload),
+                                        fieldInfo);
+        }
+        else
+        {
+            // Setting this triggers an error response below
+            expectedPayloadSize = 8;
+        }
+    }
+    else if (strcmp("un32", storageType) == 0)
+    {
+        // un32 is 8 hex digits
+        if (payloadSize == 8)
+        {
+            return VEDirectHexFieldResp((const char *)buf,
+                                        VEDirectUtils::vicUn32ToInt(payload),
+                                        fieldInfo);
+        }
+        else
+        {
+            // Setting this triggers an error response below
+            expectedPayloadSize = 8;
+        }
+    }
+    else
+    {
+        // Our field definitions contain a storage type that isn't
+        // being accounted for here...ooops! Go fix that...
+        char errorMsg[200];
+        sprintf(errorMsg, "Unknown storage type for field id 0x%04X: '%s'", id, storageType);
+
+        return VEDirectHexFieldResp(errorMsg);
+    }
+
+    // The payload received was a different size than required
+    // by the storage type in our field definitions
+    if (expectedPayloadSize != -1)
+    {
+        char errorMsg[200];
+        sprintf(errorMsg, "Unexpected payload size for field id 0x%04X: expected %d bytes, received %d",
+                id, expectedPayloadSize, payloadSize);
+
+        return VEDirectHexFieldResp(errorMsg);
+    }
+
+    // If this line is reached then something was missed above...
+    return VEDirectHexFieldResp("Unknown error");
 }
 
 void VEDirectBMV::_sendGetCommand(uint16_t id,
@@ -1041,6 +1324,7 @@ int VEDirectBMV::_readResponse(uint8_t *buf, size_t bufLen)
     int idx = 0;
     bool responseStarted = false;
     bool responseComplete = false;
+    bool responseTypeNext = false;
     while (!responseComplete)
     {
         // How are we doing on time?
@@ -1063,6 +1347,7 @@ int VEDirectBMV::_readResponse(uint8_t *buf, size_t bufLen)
                 {
                     // Yes! NOW the response is started
                     responseStarted = true;
+                    responseTypeNext = true;
                     buf[idx++] = ch;
                 }
             }
@@ -1078,6 +1363,28 @@ int VEDirectBMV::_readResponse(uint8_t *buf, size_t bufLen)
                 }
                 else
                 {
+                    // Is this the response type?
+                    if (responseTypeNext)
+                    {
+                        // Yes, reset the flag
+                        responseTypeNext = false;
+
+                        // Ignore response types that don't
+                        // exist in the doc or the ASYNC resp
+                        if (!((ch == '1') ||
+                              (ch == '3') ||
+                              (ch == '5') ||
+                              (ch == '7') ||
+                              (ch == '8')))
+                        {
+                            responseStarted = false;
+                            responseComplete = false;
+                            responseTypeNext = false;
+                            idx = 0;
+                            continue;
+                        }
+                    }
+
                     // Nope, squirrel it away
                     buf[idx++] = ch;
                     if (idx >= bufLen)

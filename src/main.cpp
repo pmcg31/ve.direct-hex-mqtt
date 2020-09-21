@@ -45,7 +45,14 @@ const char *fieldsToMonitor[] = {
     "ttg",
     "syncState",
     "uptime",
+    "relayMinEnableTime",
     ""};
+
+const bool doSet = false;
+const char *fieldToSet = "relayMinEnableTime";
+const int setRate_ms = 20000;
+unsigned long nextSetMillis;
+uint16_t relayMinEnableCurrent = 0;
 
 void setup()
 {
@@ -140,6 +147,7 @@ void setup()
   }
 
   nextThingMillis = millis() + reportRate_ms;
+  nextSetMillis = millis() + setRate_ms;
 }
 
 void loop()
@@ -268,6 +276,22 @@ void loop()
 
       fieldName = fieldsToMonitor[fieldIdx++];
     }
+  }
+
+  if (doSet && (now > nextSetMillis))
+  {
+    nextSetMillis = now + setRate_ms;
+
+    if (relayMinEnableCurrent == 0)
+    {
+      relayMinEnableCurrent = 23;
+    }
+    else
+    {
+      relayMinEnableCurrent = 0;
+    }
+
+    bmv.setByName(fieldToSet, VEDirectHexValue(relayMinEnableCurrent));
   }
 }
 
