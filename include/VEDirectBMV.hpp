@@ -5,10 +5,11 @@
 #include <stdint.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
-#include "CircularBuffer.hpp"
 #include "VEDirectTransport.hpp"
 #include "VEDirectHexFieldResp.hpp"
 #include "VEDirectHexFieldStringResp.hpp"
+#include "VEDirectBMVAppVersionResp.hpp"
+#include "VEDirectBMVProductIdResp.hpp"
 
 class VEDirectBMV
 {
@@ -19,11 +20,9 @@ public:
 public:
     VEDirectBMV(VEDirectTransport *transport);
 
-    void loop();
-
-    void ping();
-    void appVersion();
-    void productId();
+    VEDirectBMVAppVersionResp ping();
+    VEDirectBMVAppVersionResp appVersion();
+    VEDirectBMVProductIdResp productId();
     void restart();
 
     VEDirectHexFieldStringResp getStringById(uint16_t id);
@@ -32,17 +31,10 @@ public:
     VEDirectHexFieldResp getById(uint16_t id);
     VEDirectHexFieldResp getByName(const char *name);
 
-    VEDirectHexFieldResp setById(uint16_t id, VEDirectHexValue value);
-    VEDirectHexFieldResp setByName(const char *name, VEDirectHexValue value);
-
-private:
-    VEDirectHexFieldStringResp _getString(JsonObject fieldInfo);
-    VEDirectHexFieldResp _get(JsonObject fieldInfo);
-    VEDirectHexFieldResp _set(JsonObject fieldInfo, VEDirectHexValue value);
-
-    void _sendGetCommand(uint16_t id, uint8_t *buf, int bufLen);
-
-    int _readResponse(uint8_t *buf, size_t bufLen);
+    VEDirectHexFieldResp setById(uint16_t id,
+                                 VEDirectHexValue value);
+    VEDirectHexFieldResp setByName(const char *name,
+                                   VEDirectHexValue value);
 
 private:
     enum Command
@@ -72,9 +64,29 @@ private:
         f_parameterError = 0x04
     };
 
+    enum CheckResponseResult
+    {
+        cr_ok,
+        cr_badVicResponseType,
+        cr_cmdNotRecognized,
+        cr_unknownResponseType
+    };
+
 private:
-    size_t writeBufAvailableToDrain();
-    size_t writeBufAvailableToFill();
+    VEDirectHexFieldStringResp _getString(JsonObject fieldInfo);
+    VEDirectHexFieldResp _get(JsonObject fieldInfo);
+    VEDirectHexFieldResp _set(JsonObject fieldInfo,
+                              VEDirectHexValue value);
+
+    void _sendGetCommand(uint16_t id,
+                         uint8_t *buf,
+                         int bufLen);
+
+    int _readResponse(uint8_t *buf,
+                      size_t bufLen);
+
+    CheckResponseResult _checkResponseType(const char vicResponseType,
+                                           uint8_t expectedResponseType);
 
 private:
     static const size_t g_bufSize = 1024;
@@ -90,12 +102,6 @@ private:
 
 private:
     VEDirectTransport *_transport;
-
-    uint8_t _readBuf[g_bufSize];
-    size_t _readPos;
-
-    uint8_t _writeBufStorage[g_bufSize];
-    CircularBuffer _writeBuf;
 
 private:
     static DynamicJsonDocument g_bmvHexDefs;

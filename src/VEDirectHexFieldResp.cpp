@@ -1,3 +1,4 @@
+#include "VEDirectUtils.hpp"
 #include "VEDirectHexFieldResp.hpp"
 
 VEDirectHexFieldResp::VEDirectHexFieldResp(const char *msg,
@@ -5,13 +6,13 @@ VEDirectHexFieldResp::VEDirectHexFieldResp(const char *msg,
                                            JsonObject fieldInfo)
     : _isError(false), _value(value), _fieldInfo(fieldInfo)
 {
-    strcpy(_msg, msg);
+    VEDirectUtils::maxStrcpy(_msg, msg, g_maxMsgLen);
 }
 
 VEDirectHexFieldResp::VEDirectHexFieldResp(const char *errorMsg)
     : _isError(true), _value((uint32_t)0)
 {
-    strcpy(_msg, errorMsg);
+    VEDirectUtils::maxStrcpy(_msg, errorMsg, g_maxMsgLen);
 }
 
 bool VEDirectHexFieldResp::isError() const
